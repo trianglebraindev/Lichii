@@ -78,15 +78,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Tre's fork: Windows builds only. The -pgo build is compiled by MinGW clang against the
-        # repo's eglantine.profdata (MSVC cannot read an LLVM .profdata file).
+        # Tre's fork: the MSVC Windows build only. The MinGW PGO build froze on a black screen
+        # during Ocarina of Time's opening video (tre/oot-build-1).
         include:
           - platform: windows-x86_64
             runner: windows-2022
-          - platform: windows-x86_64-pgo
-            runner: windows-2022
-            pgo: true
-            mingw: true
 
     steps:
       - name: Check out source
