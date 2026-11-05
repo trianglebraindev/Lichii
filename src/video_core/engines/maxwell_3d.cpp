@@ -513,7 +513,7 @@ void Maxwell3D::TreDmaTraceMethod(u32 method, u32 argument) {
         for (u32 i = 0; i < (std::min)(count, 8U); ++i) {
             words[i] = memory_manager.Read<u32>(source + u64{i} * sizeof(u32));
         }
-        const bool dirty = memory_manager.IsMemoryDirty(source, size_t{count} * sizeof(u32),
+        const bool range_dirty = memory_manager.IsMemoryDirty(source, size_t{count} * sizeof(u32),
                                                         VideoCommon::CacheType::BufferCache);
         bool gpu_written = false;
         for (GPUVAddr page = source & ~GPUVAddr{0xfff}; page < source + u64{count} * 4;
@@ -525,7 +525,7 @@ void Maxwell3D::TreDmaTraceMethod(u32 method, u32 argument) {
                  "tre dma trace {}: DMA read{} source={:#x} count={} ram={:#x} dirty={} "
                  "gpu_written_page={} words={:08x}",
                  window, method == 0x158 ? " fifoed" : "", source, argument,
-                 regs.reg_array[0x156], dirty, gpu_written, fmt::join(words, ","));
+                 regs.reg_array[0x156], range_dirty, gpu_written, fmt::join(words, ","));
         return;
     }
     const u64 vs = (u64{regs.pipelines[1].reserved[0] & 0xff} << 32) | regs.pipelines[1].reserved[1];
