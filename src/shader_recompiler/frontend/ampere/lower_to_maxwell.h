@@ -3457,7 +3457,7 @@ inline LoweredProgram LowerToMaxwellWith(std::span<const Instruction> code, u32 
             const u32 carry_out = insn.Bits(81, 3);
             if (insn.Bits(72, 1) || insn.Bits(74, 1) || insn.Bits(80, 1) ||
                 (carry_out != 7 && ((opcode != 0x811 && insn.Bits(63, 1)) ||
-                                    (rewritten_uniform && (opcode != 0x211 || carry_out > 1)))) ||
+                                    (rewritten_uniform && opcode != 0x211))) ||
                 ((opcode == 0x211 || opcode == 0xa11) && insn.Bits(62, 1)) || (opcode == 0xc11 && (insn.words[1] & ~0x8000003fU)))
                 return fail(index, "native LEA carry/high mode");
             // 0x211 bit 63 negates Rb (LEA Rd, Ra, -Rb, s), as Maxwell ISCADD's bit 48.
@@ -3476,7 +3476,8 @@ inline LoweredProgram LowerToMaxwellWith(std::span<const Instruction> code, u32 
             }
             if (carry_out != 7) {
                 // The sum in R250, carry = sum < Rb (unsigned), as IADD3's carry out; a uniform
-                // predicate goes through P(6-n) into R239.
+                // predicate goes through P(6-n) into R239, for any UPn (Ocarina of Time's
+                // ULEA UR10, UP2, UR6, UR10, 0x2), as the uniform IADD3 carry does.
                 const u32 target = rewritten_uniform ? 6 - carry_out : carry_out, mask = 1U << target;
                 emit(0x5c18000000000000ULL | predicate | 250 | (u64{insn.Bits(24, 8)} << 8) |
                      (u64{b} << 20) | (u64{insn.Bits(75, 5)} << 39));
