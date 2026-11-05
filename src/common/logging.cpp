@@ -404,6 +404,11 @@ struct Impl {
 } // Anonymous namespace
 
 void Filter::ParseFilterString(std::string_view filter_view) {
+    // EDEN_LOG_FILTER=<filter> replaces the configured log filter (for launcher scripts).
+    if (const char* override_filter = std::getenv("EDEN_LOG_FILTER");
+        override_filter != nullptr && *override_filter != '\0') {
+        filter_view = override_filter;
+    }
     auto clause_begin = filter_view.cbegin();
     while (clause_begin < filter_view.cend()) {
         auto clause_end = std::find(clause_begin, filter_view.cend(), ' ');
