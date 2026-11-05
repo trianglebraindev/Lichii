@@ -81,6 +81,7 @@ Use these before guessing. All are off unless the variable is set; pass them as 
 | Video playback | `EDEN_NX2_VDEC_TRACE=1`, `EDEN_NX2_VDEC_DUMP=<dir>` | Decoder submit, decode and composite trace; decoded frames. |
 | Performance and frame pacing | `EDEN_NX2_GPU_PROFILE=1`, `EDEN_DKB_FRAME_TRACE=1` | GPU thread time per second by zone; per-present interval, CPU and fence timing. |
 | Command corruption or pop-in | `EDEN_NX2_PB_CHECK=1`; A/B with `EDEN_NX2_PB_SNAPSHOT=0` or `EDEN_NX2_FETCH_DRAIN=1` | How many pushbuffer entries change between submit and parse. |
+| Occlusion predicates or report reads one frame late (fog or depth-clear passes toggling, objects flickering on visibility) | `EDEN_NX2_QUERY_DMA_TRACE=1` | Each MME DMA read (split front or single thread) of a report whose host query result is not in guest memory yet: macro, method, address, size and the words read, then the same words once the next fence has popped (`landed`). Below High GPU accuracy counter reports land only at that fence. |
 | Split GPU thread races | `EDEN_NX2_SPLIT_CHECK=1` | Reports scheduler use from the wrong thread. |
 | Upscaler and DLSS contracts | `EDEN_NX2_DLSS_CONTRACT_TRACE=1` | Inputs and outputs of replaced upscaler networks. |
 | Service calls | `EDEN_NX2_IPC_TRACE=1` | IPC command trace. |
