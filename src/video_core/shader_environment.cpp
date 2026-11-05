@@ -689,6 +689,11 @@ std::shared_ptr<const LoweredNativeCode> GenericEnvironment::LowerNativeCode(u32
             }
         }
     }
+    // With EDEN_NX2_SHADER_DUMP, tie each frame dump shader hash to its dump file's key.
+    if (static const bool log_keys = std::getenv("EDEN_NX2_SHADER_DUMP") != nullptr; log_keys) {
+        LOG_INFO(Shader, "Native shader at {:#x}: key {:016x}, shader hash {:016x}", program_base,
+                 result->native_program_key, NativeShaderHash(lowered_code));
+    }
     LOG_DEBUG(Shader, "Lowered native shader at {:#x}: {} source bytes, {} instructions",
               program_base, result->source_size, lowered.instructions.size());
     return result;
