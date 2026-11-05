@@ -892,6 +892,7 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
     }
     const bool has_tess_stages = spv_modules[1] || spv_modules[2];
     auto input_assembly_topology = MaxwellToVK::PrimitiveTopology(device, key.state.topology);
+    u32 patch_control_points = key.state.patch_control_points_minus_one.Value() + 1;
     if (input_assembly_topology == VK_PRIMITIVE_TOPOLOGY_PATCH_LIST) {
         if (!has_tess_stages) {
             LOG_WARNING(Render_Vulkan, "Patch topology used without tessellation, using points");
@@ -901,8 +902,43 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         if (has_tess_stages) {
             // The Vulkan spec requires patch list IA topology be used with tessellation
             // shader stages. Forcing it fixes a crash on some drivers
+            // Experiment (Tre's fork): EDEN_TRE_TESS_LIST_PATCH=1 sizes the forced patches from
+            // the list topology the game drew with instead of its patch vertex register.
+            static const bool size_from_topology = [] {
+                const char* value = std::getenv("EDEN_TRE_TESS_LIST_PATCH");
+                return value != nullptr && *value != '\0' && *value != '0';
+            }();
+            u32 list_vertices = 0;
+            switch (key.state.topology) {
+            case Maxwell::PrimitiveTopology::Points:
+                list_vertices = 1;
+                break;
+            case Maxwell::PrimitiveTopology::Lines:
+                list_vertices = 2;
+                break;
+            case Maxwell::PrimitiveTopology::Triangles:
+                list_vertices = 3;
+                break;
+            case Maxwell::PrimitiveTopology::LinesAdjacency:
+                list_vertices = 4;
+                break;
+            case Maxwell::PrimitiveTopology::TrianglesAdjacency:
+                list_vertices = 6;
+                break;
+            default:
+                break;
+            }
+            if (size_from_topology && list_vertices != 0) {
+                patch_control_points = list_vertices;
+            }
             LOG_WARNING(Render_Vulkan,
-                        "Patch topology not used with tessellation, using patch list");
+                        "Patch topology not used with tessellation, using patch list: topology {}, "
+                        "patch vertices register {}, using {} control points; shaders {:016x} "
+                        "{:016x} {:016x} {:016x} {:016x} {:016x}",
+                        static_cast<u32>(key.state.topology.Value()),
+                        key.state.patch_control_points_minus_one.Value() + 1, patch_control_points,
+                        key.unique_hashes[0], key.unique_hashes[1], key.unique_hashes[2],
+                        key.unique_hashes[3], key.unique_hashes[4], key.unique_hashes[5]);
             input_assembly_topology = VK_PRIMITIVE_TOPOLOGY_PATCH_LIST;
         }
     }
@@ -927,8 +963,7 @@ void GraphicsPipeline::MakePipeline(VkRenderPass render_pass) {
         .sType = VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO,
         .pNext = nullptr,
         .flags = 0,
-        .patchControlPoints = std::min(key.state.patch_control_points_minus_one.Value() + 1,
-                                       device.GetMaxTessellationPatchSize()),
+        .patchControlPoints = std::min(patch_control_points, device.GetMaxTessellationPatchSize()),
     };
     std::array<VkViewportSwizzleNV, Maxwell::NumViewports> swizzles;
     std::ranges::transform(key.state.viewport_swizzles, swizzles.begin(), UnpackViewportSwizzle);
