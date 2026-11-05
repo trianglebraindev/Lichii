@@ -7,9 +7,12 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
+#include <cstdlib>
 #include <cstring>
 #include <limits>
 #include <optional>
+#include <fmt/ranges.h>
 #include "common/assert.h"
 #include "common/bit_util.h"
 #include "common/scope_exit.h"
@@ -321,6 +324,9 @@ void Maxwell3D::ConsumeSinkImpl(Core::System& system) {
     // CallMethod does.
     const bool skip_same = SkipSameValueWrites();
     const auto process = [&](u32 method, u32 value) {
+        if (TreDmaTraceEnabled()) [[unlikely]] {
+            TreDmaTraceMethod(method, value);
+        }
         if (!skip_same || regs.reg_array[method] != value) {
             ProcessDirtyRegisters(method, value);
         }
@@ -465,6 +471,72 @@ void Maxwell3D::TraceFirstMethodWrite(u32 method, u32 argument) {
     }
 }
 
+bool Maxwell3D::TreDmaTraceEnabled() {
+    static const bool enabled = std::getenv("EDEN_TRE_DMA_TRACE") != nullptr;
+    return enabled;
+}
+
+// Experiment (Tre's fork): EDEN_TRE_DMA_TRACE logs, in the order the back executes them, the
+// macro DMA reads (source, the words in guest memory now, whether the buffer cache holds newer
+// data) and every draw's count registers. One 60 ms window every 10 s, from 20 s after boot.
+void Maxwell3D::TreDmaTraceMethod(u32 method, u32 argument) {
+    using Clock = std::chrono::steady_clock;
+    static Clock::time_point next_window = Clock::now() + std::chrono::seconds{20};
+    static Clock::time_point window_end{};
+    static u32 window{};
+    static u32 lines{};
+    const bool dma = method == 0x157 || method == 0x158;
+    const bool draw_end = method == MAXWELL3D_REG_INDEX(draw.end);
+    const bool draw_begin = method == MAXWELL3D_REG_INDEX(draw.begin);
+    if (!dma && !draw_end && !draw_begin) {
+        return;
+    }
+    const auto now = Clock::now();
+    if (now >= window_end) {
+        if (now < next_window) {
+            return;
+        }
+        window_end = now + std::chrono::milliseconds{60};
+        next_window = now + std::chrono::seconds{10};
+        lines = 0;
+        ++window;
+        LOG_INFO(HW_GPU, "tre dma trace: window {} opens", window);
+    }
+    if (++lines > 6000) {
+        return;
+    }
+    if (dma) {
+        const GPUVAddr source = (GPUVAddr{regs.reg_array[0x154] & 0x1ffffff} << 32) |
+                                regs.reg_array[0x155];
+        const u32 count = (std::min)(argument, 0x1000U);
+        std::array<u32, 8> words{};
+        for (u32 i = 0; i < (std::min)(count, 8U); ++i) {
+            words[i] = memory_manager.Read<u32>(source + u64{i} * sizeof(u32));
+        }
+        const bool dirty = memory_manager.IsMemoryDirty(source, size_t{count} * sizeof(u32),
+                                                        VideoCommon::CacheType::BufferCache);
+        bool gpu_written = false;
+        for (GPUVAddr page = source & ~GPUVAddr{0xfff}; page < source + u64{count} * 4;
+             page += 0x1000) {
+            const auto device = memory_manager.GpuToCpuAddress(page);
+            gpu_written |= device && Tegra::Nx2IsGpuWritten(*device);
+        }
+        LOG_INFO(HW_GPU,
+                 "tre dma trace {}: DMA read{} source={:#x} count={} ram={:#x} dirty={} "
+                 "gpu_written_page={} words={:08x}",
+                 window, method == 0x158 ? " fifoed" : "", source, argument,
+                 regs.reg_array[0x156], dirty, gpu_written, fmt::join(words, ","));
+        return;
+    }
+    const u64 vs = (u64{regs.pipelines[1].reserved[0] & 0xff} << 32) | regs.pipelines[1].reserved[1];
+    LOG_INFO(HW_GPU,
+             "tre dma trace {}: draw {} arg={:#x} mesh={} vertex first={} count={} index first={} "
+             "count={} instance_first={} vs={:#x}",
+             window, draw_end ? "end" : "begin", argument, regs.IsMeshEnabled(),
+             regs.vertex_buffer.first, regs.vertex_buffer.count, regs.index_buffer.first,
+             regs.index_buffer.count, regs.global_base_instance_index, vs);
+}
+
 void Maxwell3D::CallMethod(Core::System& system, u32 method, u32 method_argument, bool is_last_call) {
     // It is an error to write to a register other than the current macro's ARG register before
     // it has finished execution.
@@ -498,6 +570,9 @@ void Maxwell3D::CallMethod(Core::System& system, u32 method, u32 method_argument
             method_argument, static_cast<u32>(shadow_state.shadow_ram_control), is_last_call ? 1U : 0U};
     }
     const u32 argument = ProcessShadowRam(method, method_argument);
+    if (TreDmaTraceEnabled()) [[unlikely]] {
+        TreDmaTraceMethod(method, argument);
+    }
     // A state register written with the value it holds changes nothing: no dirty flags (they
     // would make the next draw re-check that state), no method processing. Title 1 makes ~6
     // million 3D register writes a second, ~60% of them same-value, most from macro replays.

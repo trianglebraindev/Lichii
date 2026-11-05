@@ -3390,6 +3390,8 @@ private:
                     bool is_last_call, bool from_macro);
     void FrontRunMacro(Core::System& system, VideoCommon::GpuSplit& split, FrontState& state);
     void FrontDmaRead(VideoCommon::GpuSplit& split, FrontState& state, u32 method, u32 count);
+    static bool TreDmaTraceEnabled();
+    void TreDmaTraceMethod(u32 method, u32 argument);
     void FrontVerify(VideoCommon::GpuSplit& split, FrontState& state);
     void FinishFrontMacro(Core::System& system);
     std::unique_ptr<FrontState> front;
