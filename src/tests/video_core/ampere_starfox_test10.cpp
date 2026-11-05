@@ -327,10 +327,13 @@ TEST_CASE("Star Fox ULDC U16 rejects unrepresentable offsets and unsupported mod
         CHECK_FALSE(lowered);
         CHECK(lowered.instructions.empty());
     }
+    // The indexed form lowers too (Ocarina of Time's ULDC.U16 UR4, c[0x5][UR17]).
     auto indexed = CapturedUniformLoad;
     SetBits(indexed, 0, 12, 0xabb);
     SetBits(indexed, 91, 1, 1);
-    CHECK_FALSE(LowerToMaxwell(std::array{indexed, Exit}));
+    const auto indexed_lowered = LowerToMaxwell(std::array{indexed, Exit});
+    INFO(indexed_lowered.error);
+    CHECK(indexed_lowered);
 }
 
 TEST_CASE("Star Fox Test10 uniform U16 conversion reaches the real translator",
