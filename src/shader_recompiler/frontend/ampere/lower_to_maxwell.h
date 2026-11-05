@@ -2106,8 +2106,40 @@ inline LoweredProgram LowerToMaxwellWith(std::span<const Instruction> code, u32 
 
         case 0x243:
             if (insn.Bits(24, 8) != 255 || (insn.words[1] & ~0xffU) ||
-                insn.words[2] != 0x0000c4ffU)
-                return fail(index, "native packed float-to-byte mode");
+                insn.words[2] != 0x0000c4ffU) {
+                // F2IP.U8.F32 Rd, Ra, Rb, RZ (round to nearest or truncate): Rd = (u8(Ra) << 8) |
+                // u8(Rb), each clamped to [0, 255] with NaN as 0 (Ocarina of Time's compute
+                // programs pack two bytes, F2IP.U8.F32.NTZ R41, R40, R39, RZ).
+                const u32 a = insn.Bits(24, 8), b = insn.Bits(32, 8);
+                const u32 rounding = insn.Bits(78, 2);
+                if ((insn.words[1] & ~0xffU) || (insn.words[2] & ~0xc000U) != 0x000004ffU ||
+                    (rounding != 0 && rounding != 3) || (a >= 246 && a != 255) ||
+                    (b >= 246 && b != 255) || dest >= 246 || (insn.words[3] & 0xc00001ffU))
+                    return fail(index, "native packed float-to-byte mode");
+                const auto to_byte = [&](u32 source, u32 out) {
+                    if (source == 255) {
+                        emit(0x5c98000000000000ULL | predicate | out | (u64{15} << 39) | (u64{255} << 20));
+                        return;
+                    }
+                    emit(0x5800000000000000ULL | predicate | 250 | (u64{source} << 8) |
+                         (u64{source} << 20) | (u64{7} << 39) | (u64{7} << 48));
+                    emit(0x5c40000000000000ULL | predicate | 250 | (u64{source} << 8) |
+                         (u64{250} << 20) | (u64{7} << 48));
+                    mov_imm(252, 0U);
+                    emit(0x5c60000000000000ULL | predicate | 250 | (u64{250} << 8) |
+                         (u64{252} << 20) | (u64{15} << 39));
+                    mov_imm(252, 0x437f0000U);
+                    emit(0x5c60000000000000ULL | predicate | 250 | (u64{250} << 8) |
+                         (u64{252} << 20) | (u64{7} << 39));
+                    emit(0x5cb0000000000000ULL | predicate | out | (u64{2} << 8) | (u64{2} << 10) |
+                         (u64{250} << 20) | (u64{rounding} << 39));
+                };
+                to_byte(a, 248);
+                to_byte(b, 249);
+                emit(base(0x5c18000000000000ULL) | (u64{248} << 8) | (u64{249} << 20) |
+                     (u64{8} << 39));
+                break;
+            }
             insn.words[0] &= 0x00ffffffU;
             insn.words[2] = 0x0021e000U;
             opcode = 0x305;
