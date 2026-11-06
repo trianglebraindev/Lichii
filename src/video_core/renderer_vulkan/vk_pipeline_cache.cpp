@@ -8,6 +8,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -1203,10 +1204,24 @@ GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) const
         return pipeline;
     }
     const auto& draw_state = maxwell3d->draw_manager.draw_state;
-    const bool discard = CanDiscardPendingDraw(maxwell3d->GetNativeMacroEngine().native_turing,
-                                              maxwell3d->regs.zeta_enable != 0,
-                                              draw_state.draw_element_count,
-                                              draw_state.draw_element_count);
+    const bool native = maxwell3d->GetNativeMacroEngine().native_turing;
+    // EDEN_NX2_ASYNC_SKIP=1: skip native (Switch 2) draws while their pipeline builds, like the
+    // legacy async-shader hack, instead of holding the GPU thread until it is ready. New content
+    // pops in a few frames late instead of freezing the game; a skipped draw into something the
+    // game renders once and keeps can leave it missing until the game redraws it.
+    static const bool skip_native = [] {
+        const char* value = std::getenv("EDEN_NX2_ASYNC_SKIP");
+        const bool enabled = value != nullptr && *value != '\0' && *value != '0';
+        if (enabled) {
+            LOG_INFO(Render_Vulkan, "EDEN_NX2_ASYNC_SKIP: skipping native draws while their "
+                                    "pipeline builds");
+        }
+        return enabled;
+    }();
+    const bool discard =
+        (native && skip_native) ||
+        CanDiscardPendingDraw(native, maxwell3d->regs.zeta_enable != 0,
+                              draw_state.draw_element_count, draw_state.draw_element_count);
     return discard ? nullptr : pipeline;
 }
 
