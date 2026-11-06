@@ -166,8 +166,16 @@ inline RegisterPressure PrepareRegisterPressure(const Instruction& input, u32 re
         break;
     case 0x419:
     case 0x819:
+    case 0xa19:
+    case 0xc19:
         operand(16);
         operand(24);
+        operand(64);
+        break;
+    case 0x219: // SHF with a register shift amount
+        operand(16);
+        operand(24);
+        operand(32);
         operand(64);
         break;
     case 0x210:
