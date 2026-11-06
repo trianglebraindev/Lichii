@@ -186,6 +186,17 @@ Shader::RuntimeInfo MakeRuntimeInfo(std::span<const Shader::IR::Program> program
                 info.per_primitive_generics.set(Shader::IR::GenericAttributeIndex(attribute));
             }
         }
+        // Points from a mesh program: a fragment input the mesh program never writes is the
+        // point sprite coordinate (it has no other source), e.g. a sprite's texture coordinate.
+        if (previous_program->mesh.topology == 0 && program.stage == Shader::Stage::Fragment) {
+            for (size_t index = 0; index < Shader::IR::NUM_GENERICS; ++index) {
+                if (program.info.loads.Generic(index) &&
+                    !previous_program->info.stores.Generic(index) &&
+                    !info.per_primitive_generics.test(index)) {
+                    info.point_coord_generics.set(index);
+                }
+            }
+        }
     }
     const Shader::Stage stage{program.stage};
     const bool has_geometry{key.unique_hashes[4] != 0 && !programs[4].is_geometry_passthrough};

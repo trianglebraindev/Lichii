@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <bitset>
+#include <cstdlib>
 #include <memory>
 #include <optional>
 #include <vector>
@@ -412,8 +413,14 @@ IR::Program TranslateProgram(ObjectPool<IR::Inst>& inst_pool, ObjectPool<IR::Blo
         program.workgroup_size = {(std::max)(threads, 1U), 1, 1};
         if (program.stage == Stage::Mesh) {
             // clc597.h SET_MESH_SHADER_A_OUTPUT_TOPOLOGY: POINTS 0, LINES 1, TRIANGLES 4.
-            if (program.mesh.topology != 0 && program.mesh.topology != 1 &&
-                program.mesh.topology != 4) {
+            // EDEN_NX2_MESH_POINTS=0: leave point and line output unbuilt, as before (to test).
+            static const bool points_and_lines = [] {
+                const char* value = std::getenv("EDEN_NX2_MESH_POINTS");
+                return value == nullptr || *value == '\0' || *value != '0';
+            }();
+            if ((program.mesh.topology != 0 && program.mesh.topology != 1 &&
+                 program.mesh.topology != 4) ||
+                (!points_and_lines && program.mesh.topology != 4)) {
                 throw NotImplementedException("Mesh output topology {} (SET_MESH_SHADER_A {:#010x})",
                                               program.mesh.topology, shader_a);
             }

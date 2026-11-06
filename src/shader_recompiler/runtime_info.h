@@ -88,6 +88,9 @@ struct RuntimeInfo {
     VaryingState previous_stage_stores;
     /// Fragment stage after a mesh program: generic inputs it writes per primitive.
     std::bitset<32> per_primitive_generics{};
+    /// Fragment stage after a mesh program that outputs points: generic inputs it reads that the
+    /// mesh program does not write. The hardware fills these with the point sprite coordinate.
+    std::bitset<32> point_coord_generics{};
     std::map<IR::Attribute, IR::Attribute> previous_stage_legacy_stores_mapping;
 
     bool convert_depth_mode{};

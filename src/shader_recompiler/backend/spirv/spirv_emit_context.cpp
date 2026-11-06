@@ -1715,7 +1715,8 @@ void EmitContext::DefineInputs(const IR::Program& program) {
     if (loads[IR::Attribute::FrontFace]) {
         front_face = DefineInput(*this, U1, true, spv::BuiltIn::FrontFacing);
     }
-    if (loads[IR::Attribute::PointSpriteS] || loads[IR::Attribute::PointSpriteT]) {
+    if (loads[IR::Attribute::PointSpriteS] || loads[IR::Attribute::PointSpriteT] ||
+        (stage == Stage::Fragment && runtime_info.point_coord_generics.any())) {
         point_coord = DefineInput(*this, F32[2], true, spv::BuiltIn::PointCoord);
     }
     if (loads[IR::Attribute::TessellationEvaluationPointU] ||
