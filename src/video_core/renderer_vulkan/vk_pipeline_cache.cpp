@@ -578,6 +578,7 @@ PipelineCache::PipelineCache(Tegra::MaxwellDeviceMemoryManager& device_memory_,
             driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY &&
             device.GetDriverVersion() < VK_MAKE_VERSION(512, 672, 0),
         .has_broken_spirv_subgroup_shuffle = driver_id == VK_DRIVER_ID_QUALCOMM_PROPRIETARY,
+        .has_broken_spirv_fragment_shuffle = driver_id == VK_DRIVER_ID_AMD_PROPRIETARY,
         .max_subgroup_size = device.GetMaxSubgroupSize(),
         .has_broken_robust =
             device.IsNvidia() && device.GetNvidiaArch() <= NvidiaArchitecture::Arch_Pascal,
@@ -1207,6 +1208,9 @@ void PipelineCache::EvictUnusedPipelines() {
              EvictAfterFrames, graphics_cache.size());
 }
 
+/// Returns `pipeline` when it is built or the current draw must wait for it, and nullptr when the
+/// draw may be skipped while it builds (asynchronous shaders; native draws only with
+/// EDEN_NX2_ASYNC_DISCARD=1). Each nullptr returned for an unbuilt pipeline is counted for the log.
 GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) const noexcept {
     if (pipeline->IsBuilt()) {
         return pipeline;
@@ -1214,25 +1218,34 @@ GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) const
     if (!use_asynchronous_shaders) {
         return pipeline;
     }
-    const auto& draw_state = maxwell3d->draw_manager.draw_state;
-    const bool native = maxwell3d->GetNativeMacroEngine().native_turing;
-    // EDEN_NX2_ASYNC_SKIP=1: skip native (Switch 2) draws while their pipeline builds, like the
-    // legacy async-shader hack, instead of holding the GPU thread until it is ready. New content
-    // pops in a few frames late instead of freezing the game; a skipped draw into something the
-    // game renders once and keeps can leave it missing until the game redraws it.
-    static const bool skip_native = [] {
-        const char* value = std::getenv("EDEN_NX2_ASYNC_SKIP");
-        const bool enabled = value != nullptr && *value != '\0' && *value != '0';
+    // EDEN_NX2_ASYNC_DISCARD=1: skip native draws whose pipeline is still building instead of
+    // waiting for it (experimental; the draw may be missing for a frame or more).
+    /// Reads EDEN_NX2_ASYNC_DISCARD once and logs when it is on.
+    // EDEN_NX2_ASYNC_SKIP=1 is this fork's earlier name for the same switch.
+    static const bool discard_native = [] {
+        const char* value = std::getenv("EDEN_NX2_ASYNC_DISCARD");
+        const char* skip = std::getenv("EDEN_NX2_ASYNC_SKIP");
+        const bool enabled = (value != nullptr && value[0] == '1') ||
+                             (skip != nullptr && skip[0] == '1');
         if (enabled) {
-            LOG_INFO(Render_Vulkan, "EDEN_NX2_ASYNC_SKIP: skipping native draws while their "
-                                    "pipeline builds");
+            LOG_INFO(Render_Vulkan, "EDEN_NX2_ASYNC_DISCARD: native draws skip unbuilt pipelines");
         }
         return enabled;
     }();
-    const bool discard =
-        (native && skip_native) ||
-        CanDiscardPendingDraw(native, maxwell3d->regs.zeta_enable != 0,
-                              draw_state.draw_element_count, draw_state.draw_element_count);
+    const auto& draw_state = maxwell3d->draw_manager.draw_state;
+    const bool discard = CanDiscardPendingDraw(maxwell3d->GetNativeMacroEngine().native_turing,
+                                              maxwell3d->regs.zeta_enable != 0,
+                                              draw_state.draw_element_count,
+                                              draw_state.draw_element_count, discard_native);
+    if (discard) {
+        static std::atomic<u64> skipped{};
+        if ((skipped.fetch_add(1, std::memory_order_relaxed) & 255) == 0) {
+            // Counts lookups, not draws: a draw state can look its pipeline up more than once.
+            LOG_INFO(Render_Vulkan,
+                     "Async shaders: {} pipeline lookups skipped for unbuilt pipelines",
+                     skipped.load(std::memory_order_relaxed));
+        }
+    }
     return discard ? nullptr : pipeline;
 }
 
