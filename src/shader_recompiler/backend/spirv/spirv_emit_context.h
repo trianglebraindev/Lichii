@@ -385,6 +385,8 @@ public:
     Id mesh_primitive_count{};
     Id mesh_shared_u32{};   ///< pointer type to one workgroup word
     Id mesh_primitive_indices{};
+    /// Per-vertex PointSize output the mesh epilogue fills when the program writes none.
+    Id mesh_default_point_size{};
     MeshInfo mesh_info{};
     u32 mesh_threads{};
     u32 mesh_attribute_words{};

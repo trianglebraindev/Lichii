@@ -1810,7 +1810,7 @@ void EmitContext::DefineMesh(const IR::Program& program) {
     mesh_attribute_words = (std::max)(
         mesh_primitive_base + Common::DivCeil(mesh_info.max_primitives, 32U) * primitive_lines * 32,
         1U);
-    mesh_map_bytes = 4 + 3 * mesh_info.max_primitives;
+    mesh_map_bytes = 4 + mesh_info.IndicesPerPrimitive() * mesh_info.max_primitives;
     mesh_shared_u32 = TypePointer(spv::StorageClass::Workgroup, U32[1]);
     mesh_attributes = DefineVariable(*this, TypeArray(U32[1], Const(mesh_attribute_words)),
                                      std::nullopt, spv::StorageClass::Workgroup);
@@ -1824,9 +1824,23 @@ void EmitContext::DefineMesh(const IR::Program& program) {
 
     const Id vertex_count{Const(mesh_info.max_vertices)};
     const Id primitive_count{Const(mesh_info.max_primitives)};
-    mesh_primitive_indices =
-        DefineVariable(*this, TypeArray(U32[3], primitive_count),
-                       spv::BuiltIn::PrimitiveTriangleIndicesEXT, spv::StorageClass::Output);
+    switch (mesh_info.IndicesPerPrimitive()) {
+    case 1:
+        mesh_primitive_indices =
+            DefineVariable(*this, TypeArray(U32[1], primitive_count),
+                           spv::BuiltIn::PrimitivePointIndicesEXT, spv::StorageClass::Output);
+        break;
+    case 2:
+        mesh_primitive_indices =
+            DefineVariable(*this, TypeArray(U32[2], primitive_count),
+                           spv::BuiltIn::PrimitiveLineIndicesEXT, spv::StorageClass::Output);
+        break;
+    default:
+        mesh_primitive_indices =
+            DefineVariable(*this, TypeArray(U32[3], primitive_count),
+                           spv::BuiltIn::PrimitiveTriangleIndicesEXT, spv::StorageClass::Output);
+        break;
+    }
     std::array<Id, IR::NUM_GENERICS> generics[2]{};
     Id point_size{}, primitive_layer{}, primitive_viewport{}, primitive_id_output{};
     const auto per_primitive_builtin = [&](Id& variable, spv::BuiltIn builtin) {
@@ -1888,6 +1902,12 @@ void EmitContext::DefineMesh(const IR::Program& program) {
     };
     for (const u32 line : mesh_info.vertex_lines) {
         mesh_vertex_targets.push_back(target(line, false));
+    }
+    if (mesh_info.topology == 0 && !Sirit::ValidId(point_size)) {
+        // Points without a point size line: every vertex gets the fixed point size (1 if unset).
+        point_size = DefineVariable(*this, TypeArray(F32[1], vertex_count),
+                                    spv::BuiltIn::PointSize, spv::StorageClass::Output);
+        mesh_default_point_size = point_size;
     }
     for (const u32 line : mesh_info.primitive_lines) {
         mesh_primitive_targets.push_back(target(line, true));
