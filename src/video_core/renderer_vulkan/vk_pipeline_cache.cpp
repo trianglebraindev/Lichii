@@ -1233,10 +1233,18 @@ GraphicsPipeline* PipelineCache::BuiltPipeline(GraphicsPipeline* pipeline) const
         return enabled;
     }();
     const auto& draw_state = maxwell3d->draw_manager.draw_state;
-    const bool discard = CanDiscardPendingDraw(maxwell3d->GetNativeMacroEngine().native_turing,
-                                              maxwell3d->regs.zeta_enable != 0,
-                                              draw_state.draw_element_count,
-                                              draw_state.draw_element_count, discard_native);
+    // EDEN_NX2_ASYNC_SKIP=1 skips every native draw while its pipeline builds: upstream's switch
+    // still waits for draws without depth and with few vertices, which includes mesh draws (a
+    // 1.9 s driver build of one held Ocarina for that long).
+    static const bool skip_all_native = [] {
+        const char* skip = std::getenv("EDEN_NX2_ASYNC_SKIP");
+        return skip != nullptr && skip[0] == '1';
+    }();
+    const bool native = maxwell3d->GetNativeMacroEngine().native_turing;
+    const bool discard = (native && skip_all_native) ||
+                         CanDiscardPendingDraw(native, maxwell3d->regs.zeta_enable != 0,
+                                               draw_state.draw_element_count,
+                                               draw_state.draw_element_count, discard_native);
     if (discard) {
         static std::atomic<u64> skipped{};
         if ((skipped.fetch_add(1, std::memory_order_relaxed) & 255) == 0) {
