@@ -3979,7 +3979,9 @@ inline LoweredProgram LowerToMaxwell(std::span<const Instruction> code,
     for (;;) {
         LoweredProgram lowered = LowerToMaxwellWith(code, high_uniforms, options);
         if (lowered || lowered.high_uniform_registers <= high_uniforms) return lowered;
-        high_uniforms = lowered.high_uniform_registers;
+        // Whole quartets, so the base (216 - high_uniforms) stays 4-aligned: shadowing high guest
+        // registers borrows aligned quartets below it and refuses a misaligned base.
+        high_uniforms = (lowered.high_uniform_registers + 3) & ~3U;
     }
 }
 
